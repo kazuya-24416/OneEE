@@ -1,6 +1,7 @@
 import argparse
 import random
 
+import tqdm
 import numpy as np
 import prettytable as pt
 import torch
@@ -67,20 +68,20 @@ class Trainer(object):
         no_decay = ['bias', 'LayerNorm.weight']
         params = [
             {'params': [p for n, p in model.bert.named_parameters() if not any(nd in n for nd in no_decay)],
-             'lr': config.bert_learning_rate,
-             'weight_decay': config.weight_decay},
+            'lr': config.bert_learning_rate,
+            'weight_decay': config.weight_decay},
             {'params': [p for n, p in model.bert.named_parameters() if any(nd in n for nd in no_decay)],
-             'lr': config.bert_learning_rate,
-             'weight_decay': 0.0},
+            'lr': config.bert_learning_rate,
+            'weight_decay': 0.0},
             {'params': other_params,
-             'lr': config.learning_rate,
-             'weight_decay': config.weight_decay},
+            'lr': config.learning_rate,
+            'weight_decay': config.weight_decay},
         ]
 
         self.optimizer = transformers.AdamW(params, lr=config.learning_rate, weight_decay=config.weight_decay)
         self.scheduler = transformers.get_linear_schedule_with_warmup(self.optimizer,
-                                                                      num_warmup_steps=warmup_steps,
-                                                                      num_training_steps=updates_total)
+                                                                    num_warmup_steps=warmup_steps,
+                                                                    num_training_steps=updates_total)
 
     def train(self, epoch, data_loader):
         self.model.train()
@@ -101,7 +102,9 @@ class Trainer(object):
 
         alpha = epoch / config.epochs
         # gamma = gamma ** 2
-        for i, data_batch in enumerate(data_loader):
+        # tqdmを追加
+        pbar = tqdm.tqdm(data_loader, desc=f'Epoch {epoch}')
+        for i, data_batch in enumerate(pbar):
             data_batch = [data.cuda() for data in data_batch[:-2]] + [data_batch[-2], data_batch[-1]]
             inputs, att_mask, word_mask1d, word_mask2d, triu_mask2d, tri_labels, arg_labels, role_labels, event_idx, _, role_labels_num = data_batch
             # event_idx = [i for i in range(10)]
@@ -178,7 +181,7 @@ class Trainer(object):
 
         table = pt.PrettyTable(["Train {}".format(epoch), "Loss", "Tri F1", "Arg F1", "Role F1"])
         table.add_row(["Label", "{:.4f}".format(np.mean(loss_list))] +
-                      ["{:3.4f}".format(x) for x in [tri_f1, arg_f1, role_f1]])
+                    ["{:3.4f}".format(x) for x in [tri_f1, arg_f1, role_f1]])
         logger.info("\n{}".format(table))
         # print(np.mean(overlap))
         # print(np.mean(loss2_list))
@@ -193,7 +196,9 @@ class Trainer(object):
 
         total_results = {k + "_" + t: 0 for k in ["ti", "tc", "ai", "ac"] for t in ["r", "p", "c"]}
         with torch.no_grad():
-            for i, data_batch in enumerate(data_loader):
+            # tqdmを追加
+            pbar = tqdm.tqdm(data_loader, desc=f'Epoch {epoch}')
+            for i, data_batch in enumerate(pbar):
                 data_batch = [data.cuda() for data in data_batch[:-2]] + [data_batch[-2], data_batch[-1]]
                 inputs, att_mask, word_mask1d, word_mask2d, triu_mask2d, tri_labels, arg_labels, role_labels, event_idx, tuple_labels, _ = data_batch
                 results = model(inputs, att_mask, word_mask1d, word_mask2d, triu_mask2d, tri_labels, arg_labels, role_labels)
