@@ -2,6 +2,7 @@ import argparse
 import random
 
 import tqdm
+import wandb
 import numpy as np
 import prettytable as pt
 import torch
@@ -178,6 +179,21 @@ class Trainer(object):
         tri_f1, tri_r, tri_p = utils.calculate_f1(total_tc_r, total_tc_p, total_tc_c)
         arg_f1, arg_r, arg_p = utils.calculate_f1(total_ai_r, total_ai_p, total_ai_c)
         role_f1, role_r, role_p = utils.calculate_f1(total_ac_r, total_ac_p, total_ac_c)
+        
+        # エポックごとのロギング
+        wandb.log({
+            'epoch': epoch,
+            'train/loss': np.mean(loss_list),
+            'train/tri_f1': tri_f1,
+            'train/arg_f1': arg_f1,
+            'train/role_f1': role_f1,
+            'train/tri_precision': tri_p,
+            'train/tri_recall': tri_r,
+            'train/arg_precision': arg_p,
+            'train/arg_recall': arg_r,
+            'train/role_precision': role_p,
+            'train/role_recall': role_r
+        })
 
         table = pt.PrettyTable(["Train {}".format(epoch), "Loss", "Tri F1", "Arg F1", "Role F1"])
         table.add_row(["Label", "{:.4f}".format(np.mean(loss_list))] +
@@ -218,6 +234,23 @@ class Trainer(object):
         table.add_row(["Trigger C"] + ["{:3.4f}".format(x) for x in [tc_f1, tc_p, tc_r]])
         table.add_row(["Argument I"] + ["{:3.4f}".format(x) for x in [ai_f1, ai_p, ai_r]])
         table.add_row(["Argument C"] + ["{:3.4f}".format(x) for x in [ac_f1, ac_p, ac_r]])
+        
+        # 評価結果のロギング
+        prefix = 'test' if is_test else 'val'
+        wandb.log({
+            f'{prefix}/trigger_identification_f1': ti_f1,
+            f'{prefix}/trigger_classification_f1': tc_f1,
+            f'{prefix}/argument_identification_f1': ai_f1,
+            f'{prefix}/argument_classification_f1': ac_f1,
+            f'{prefix}/trigger_identification_precision': ti_p,
+            f'{prefix}/trigger_identification_recall': ti_r,
+            f'{prefix}/trigger_classification_precision': tc_p,
+            f'{prefix}/trigger_classification_recall': tc_r,
+            f'{prefix}/argument_identification_precision': ai_p,
+            f'{prefix}/argument_identification_recall': ai_r,
+            f'{prefix}/argument_classification_precision': ac_p,
+            f'{prefix}/argument_classification_recall': ac_r
+        })
 
         logger.info("\n{}".format(table))
         return (ti_f1 + ai_f1 + tc_f1 + ac_f1) / 4
@@ -231,6 +264,12 @@ class Trainer(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    
+    # 既存の引数パーサーに wandb 関連の引数を追加
+    parser.add_argument('--wandb_project', type=str, default='OneEE')
+    parser.add_argument('--wandb_entity', type=str, default=None)
+    parser.add_argument('--wandb_name', type=str, default=None)
+    
     parser.add_argument('--config', type=str, default='./config/fewfc.json')
     parser.add_argument('--device', type=int, default=1)
 
@@ -261,6 +300,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = config.Config(args)
+    
+    # wandb の初期化
+    wandb.init(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        name=args.wandb_name,
+        config=vars(args)  # 設定をWandBに記録
+    )
 
     logger = utils.get_logger(config.dataset)
     logger.info(config)
@@ -282,11 +329,11 @@ if __name__ == '__main__':
 
     train_loader, dev_loader, test_loader = (
         DataLoader(dataset=dataset,
-                   batch_size=config.batch_size,
-                   collate_fn=data_loader.collate_fn,
-                   shuffle=i == 0,
-                   num_workers=2,
-                   drop_last=i == 0)
+                batch_size=config.batch_size,
+                collate_fn=data_loader.collate_fn,
+                shuffle=i == 0,
+                num_workers=2,
+                drop_last=i == 0)
         for i, dataset in enumerate(datasets)
     )
 
